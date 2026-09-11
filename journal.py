@@ -1,14 +1,40 @@
-import csv
+import json
 from pathlib import Path
-PATH=Path('trade_journal.csv')
-FIELDS=['time','symbol','direction','stake','expiration_seconds','score','payout_percent','result','pnl']
-def log(row):
-    exists=PATH.exists()
-    with PATH.open('a',newline='',encoding='utf-8') as f:
-        w=csv.DictWriter(f,fieldnames=FIELDS)
-        if not exists:w.writeheader()
-        w.writerow({k:row.get(k,'') for k in FIELDS})
-def stats():
-    if not PATH.exists():return {'trades':0,'wins':0,'losses':0,'win_rate':0.,'pnl':0.}
-    rows=list(csv.DictReader(PATH.open(encoding='utf-8'))); wins=sum(r['result']=='WIN' for r in rows); losses=sum(r['result']=='LOSS' for r in rows); total=wins+losses; pnl=sum(float(r['pnl']) for r in rows)
-    return {'trades':total,'wins':wins,'losses':losses,'win_rate':round(wins/total*100,2) if total else 0.,'pnl':round(pnl,2)}
+from typing import Dict, List, Optional
+
+
+class Journal:
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def append(self, row: Dict):
+        with self.path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def all(self) -> List[Dict]:
+        if not self.path.exists():
+            return []
+        rows = []
+        with self.path.open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return rows
+
+    def stats(self, chat_id: Optional[int] = None):
+        rows = [r for r in self.all() if r.get("status") == "CLOSED"]
+        if chat_id is not None:
+            rows = [r for r in rows if r.get("chat_id") == chat_id]
+        wins = sum(r.get("result") == "WIN" for r in rows)
+        losses = sum(r.get("result") == "LOSS" for r in rows)
+        ties = sum(r.get("result") == "TIE" for r in rows)
+        decisive = wins + losses
+        pnl = sum(float(r.get("pnl", 0)) for r in rows)
+        return {
+            "trades": len(rows), "wins": wins, "losses": losses, "ties": ties,
+            "win_rate": round(wins / decisive * 100, 2) if decisive else 0.0,
+            "pnl": round(pnl, 2),
+        }
