@@ -68,3 +68,14 @@ Commandes : `/start`, `/analyze`, `/simulate`, `/status`, `/stats`, `/resume`, `
 ## Limite importante sur Pocket Option / OTC
 
 V1.1 n'essaie pas de se connecter directement à Pocket Option ni de contourner ses mécanismes. Les données Twelve Data peuvent différer des cotations/payouts de la plateforme. Les signaux doivent donc être considérés comme un environnement de recherche/paper trading, pas comme une promesse de résultat sur Pocket Option.
+
+
+## Notification Fix
+V1.1 used a manual `initialize()`/`start()` lifecycle for python-telegram-bot.
+With that lifecycle, `post_init` is not automatically invoked. The paper-trade
+evaluator therefore did not start, so expired simulations could remain open
+without sending a Telegram result notification.
+
+This fixed package starts `evaluator_loop()` explicitly during FastAPI startup,
+cancels it cleanly during shutdown, and logs market-data evaluation errors
+instead of silently ignoring them.

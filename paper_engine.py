@@ -55,7 +55,8 @@ class PaperEngine:
         for trade in due:
             try:
                 exit_price = await self.provider.latest_close(trade.symbol, trade.interval)
-            except Exception:
+            except Exception as exc:
+                print(f"Paper evaluation error for {trade.id}: {exc}")
                 continue
             if trade.direction == "CALL":
                 result = "WIN" if exit_price > trade.entry else "LOSS" if exit_price < trade.entry else "TIE"

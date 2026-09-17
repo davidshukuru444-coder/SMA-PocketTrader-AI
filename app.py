@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -6,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from config import settings
 from telegram import Update
-from telegram_bot import build_application
+from telegram_bot import build_application, evaluator_loop
 
 
 ptb_app = build_application()
@@ -16,6 +17,11 @@ ptb_app = build_application()
 async def lifespan(app: FastAPI):
     await ptb_app.initialize()
     await ptb_app.start()
+
+    # The PTB lifecycle is managed manually here (initialize/start), so
+    # post_init is not automatically invoked. Start the paper evaluator
+    # explicitly so expired simulations generate Telegram notifications.
+    evaluator_task = asyncio.create_task(evaluator_loop(ptb_app))
     if not settings.public_base_url:
         print("WARNING: PUBLIC_BASE_URL is missing; Telegram webhook cannot be registered.")
     else:
@@ -25,9 +31,16 @@ async def lifespan(app: FastAPI):
             kwargs["secret_token"] = settings.webhook_secret
         await ptb_app.bot.set_webhook(**kwargs)
         print(f"Telegram webhook configured: {webhook_url}")
-    yield
-    await ptb_app.stop()
-    await ptb_app.shutdown()
+    try:
+        yield
+    finally:
+        evaluator_task.cancel()
+        try:
+            await evaluator_task
+        except asyncio.CancelledError:
+            pass
+        await ptb_app.stop()
+        await ptb_app.shutdown()
 
 
 app = FastAPI(title="SMA PocketTrader AI", version="1.1.0", lifespan=lifespan)
